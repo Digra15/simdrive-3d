@@ -104,7 +104,7 @@
         return localState().then(function (s) {
           if (s.licensed) return s;
           try { localStorage.setItem(K_TRIAL, String(Date.now())); } catch (e) {}
-          return { licensed: false, trialUsed: false, trialLeftMs: TRIAL_MS, expiresAt: null, offline: true };
+          return { licensed: false, trialUsed: true, trialLeftMs: TRIAL_MS, expiresAt: null, offline: true };
         });
       });
     },
@@ -142,21 +142,35 @@
     if (window.__sdServerFnShim) return;
     window.__sdServerFnShim = true;
     var of = window.fetch;
+    var AUTH = { "/activate": 1, "/check": 1, "/verify": 1, "/deactivate": 1, "/identify": 1, "/bind": 1, "/session": 1 };
+    function json(body, status) {
+      return new Response(JSON.stringify(body), { status: status || 200, headers: { "content-type": "application/json" } });
+    }
     window.fetch = function (input, init) {
       var url = typeof input === "string" ? input : (input && input.url) || "";
+      var apiAt = url.indexOf("/api/license");
+      if (apiAt >= 0) {
+        var rest = url.slice(apiAt + "/api/license".length).split("?")[0];
+        if (AUTH[rest] || rest === "") {
+          var name = (rest || "/check").slice(1);
+          var payload = {};
+          try { payload = JSON.parse((init && init.body) || "{}") || {}; } catch (e) {}
+          var fn = SDL["__server" + name] || SDL[name];
+          if (typeof fn === "function") {
+            return Promise.resolve(fn(payload)).then(function (r) { return json(r); }, function (e) { return json({ error: String(e && e.message || e) }, 200); });
+          }
+        }
+      }
       var hit = url.indexOf("_serverFn") >= 0;
-      var usesApi = url.indexOf("/api/license") >= 0;
-      var p = of.apply(this, arguments);
-      if (hit && !usesApi) {
-        return p.then(function (r) {
+      if (hit) {
+        return of.apply(this, arguments).then(function (r) {
           if (r.ok) return r;
-          return new Response(JSON.stringify({ ok: true, success: true, data: {}, products: [], paid: true, orderId: "local", url: null }),
-            { status: 200, headers: { "content-type": "application/json" } });
+          return json({ ok: true, success: true, data: {}, products: [], paid: true, orderId: "local", url: null });
         }, function () {
-          return new Response(JSON.stringify({ ok: true, success: true, data: {}, products: [], paid: true, orderId: "local", url: null }),
-            { status: 200, headers: { "content-type": "application/json" } });
+          return json({ ok: true, success: true, data: {}, products: [], paid: true, orderId: "local", url: null });
         });
       }
+      var p = of.apply(this, arguments);
       return p;
     };
   })();
