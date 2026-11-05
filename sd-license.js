@@ -150,6 +150,34 @@
   };
   window.SimDriveLicense = SDL;
 
+  /* Aktivasi lewat URL supaya bisa dipakai sebagai tautan langsung:
+     ?lic=999999  /  ?lisensi=999999  /  ?code=999999  /  ?master=1  -> pasang lisensi SUPER
+     ?reset=1 -> bersihkan state lisensi & trial di perangkat ini (obat "tidak bisa masuk")
+     Parameter dibersihkan dari address bar setelah diproses. */
+  (function urlActivate() {
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    var wantReset = q.get("reset") === "1";
+    var code = (q.get("lic") || q.get("lisensi") || q.get("code") || "").replace(/\D/g, "").slice(0, 6);
+    var wantMaster = q.get("master") === "1";
+    if (!wantReset && !wantMaster && !code) return;
+    if (wantReset) {
+      try { localStorage.removeItem(K_LIC); localStorage.removeItem(K_TRIAL); } catch (e) {}
+    }
+    if (wantMaster || MASTER_CODES.indexOf(code) >= 0) {
+      try { localStorage.setItem(K_LIC, MASTER_KEY); } catch (e) {}
+    } else if (code) {
+      try {
+        SDL.activate({ code: code }).catch(function () {});
+      } catch (e) {}
+    }
+    try {
+      var u = new URL(location.href);
+      ["lic", "lisensi", "code", "master", "reset"].forEach(function (k) { u.searchParams.delete(k); });
+      history.replaceState(null, "", u.pathname + (u.search ? u.search : "") + u.hash);
+    } catch (e) {}
+  })();
+
   /* Shim serverFn TanStack (simpan peta, checkout/premium) utk hosting statis:
      balas sukses generik supaya SPA tidak error saat tidak ada backend Python. */
   (function shimServerFn() {
