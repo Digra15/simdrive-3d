@@ -28,10 +28,15 @@ def main():
     sub.add_parser("token")
     kg = sub.add_parser("keygen")
     kg.add_argument("device")
+    sub.add_parser("master")
     args = ap.parse_args()
 
     if args.cmd == "keygen":
         print(licensing.keygen(args.device))
+    elif args.cmd == "master":
+        print("Kode SUPER (berlaku di device apa pun):")
+        for c in licensing.MASTER_CODES:
+            print(" ", c)
     elif args.cmd == "new":
         out = licensing.create_codes(args.count, args.days, args.note, args.customer)
         print(f"{'PERMANEN' if out['permanent'] else str(out['days']) + ' hari'} — {len(out['codes'])} kode:")

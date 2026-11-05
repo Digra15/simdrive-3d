@@ -85,6 +85,8 @@ def _license_for(st, dev):
     code = st["bindings"].get(dev)
     if not code:
         return None
+    if str(code) in MASTER_CODES:
+        return {"code": str(code), "permanent": True, "deviceId": dev, "revoked": False}
     c = st["codes"].get(code)
     if not c or c.get("revoked"):
         st["bindings"].pop(dev, None)
@@ -129,9 +131,22 @@ def check(dev, hw="", info=None):
         return _unlicensed()
 
 
+MASTER_CODES = [c.strip() for c in os.environ.get("SD_MASTER_CODES", "321860,999999").split(",") if c.strip()]
+
+
 def activate(code, dev, hw=""):
     with _lock:
         st = load()
+        if str(code) in MASTER_CODES:
+            # lisensi SUPER: berlaku di perangkat mana pun, otomatis dianggap permanen
+            st["codes"][str(code)] = {"code": str(code), "days": 0, "permanent": True,
+                                      "created": st["codes"].get(str(code), {}).get("created", _iso(_now())),
+                                      "note": "master", "customer": "master", "deviceId": None,
+                                      "activatedAt": _iso(_now()), "revoked": False}
+            if dev:
+                st["bindings"][dev] = str(code)
+            _save(st)
+            return {"ok": True, "message": "Lisensi SUPER aktif — berlaku di semua perangkat (lifetime).", "master": True}
         c = st["codes"].get(code)
         if not c and dev and code == keygen(dev):
             # kode hasil keygen offline (terikat perangkat), belum tercatat

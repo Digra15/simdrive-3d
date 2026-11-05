@@ -12,6 +12,8 @@
   var nativeFetch = (typeof window.fetch === "function") ? window.fetch.bind(window) : null;
   if (window.__sdApiDead === undefined) window.__sdApiDead = false;
   var SECRET = "s3cr3t-simdrive3d-v1-8f2c1d94a7b34e6f"; // ganti bila mau (harus sama dgn license_cli.py)
+  var MASTER_CODES = ["321860", "999999"]; // lisensi SUPER: berlaku di device apa pun
+  var MASTER_KEY = JSON.stringify({ master: true, code: "321860", at: "master" });
   var TRIAL_MS = 120000;
   var K_DEV = "sd_device", K_LIC = "sd_lic", K_TRIAL = "sd_trial_start";
 
@@ -71,6 +73,8 @@
     try { rec = JSON.parse(localStorage.getItem(K_LIC) || "null"); } catch (e) {}
     var started = false;
     try { started = !!parseInt(localStorage.getItem(K_TRIAL) || "", 10); } catch (e) {}
+    // Lisensi SUPER (master): berlaku di device mana pun, tidak terikat perangkat
+    if (rec && rec.master) return { licensed: true, trialUsed: true, trialLeftMs: 0, expiresAt: null, offline: true, master: true };
     // Tanpa backend: gate tetap tampil; lisensi divalidasi offline (kode keygen terikat perangkat)
     if (rec && rec.deviceId === d && rec.code) return { licensed: true, trialUsed: true, trialLeftMs: 0, expiresAt: null, offline: true };
     // Kontrak klien: trialUsed=false -> masih boleh "Coba Trial"; trial aktif -> trialUsed=true + trialLeftMs>0
@@ -119,6 +123,10 @@
       return apiOrLocal("/activate", p, function () {
         var code = String(p.code || "").replace(/\D/g, "").slice(0, 6);
         var d = deviceId();
+        if (MASTER_CODES.indexOf(code) >= 0) {
+          try { localStorage.setItem(K_LIC, MASTER_KEY); } catch (e) {}
+          return { ok: true, message: "Lisensi SUPER aktif — berlaku di semua perangkat (lifetime)." };
+        }
         return hex6(d).then(function (want) {
           if (code.length !== 6 || code !== want) {
             return { ok: false, message: "Kode lisensi tidak valid untuk perangkat ini." };
