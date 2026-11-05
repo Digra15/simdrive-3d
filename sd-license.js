@@ -9,6 +9,8 @@
 (function () {
   "use strict";
   var API = "/api/license";
+  var nativeFetch = (typeof window.fetch === "function") ? window.fetch.bind(window) : null;
+  if (window.__sdApiDead === undefined) window.__sdApiDead = false;
   var SECRET = "s3cr3t-simdrive3d-v1-8f2c1d94a7b34e6f"; // ganti bila mau (harus sama dgn license_cli.py)
   var TRIAL_MS = 120000;
   var K_DEV = "sd_device", K_LIC = "sd_lic", K_TRIAL = "sd_trial_start";
@@ -82,9 +84,13 @@
   }
 
   function post(path, body) {
-    return fetch(API + path, {
+    if (!nativeFetch || window.__sdApiDead) return Promise.reject(Error("api offline"));
+    return nativeFetch(API + path, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {})
-    }).then(function (r) { if (!r.ok) throw Error("http " + r.status); return r.json(); });
+    }).then(function (r) {
+      if (!r.ok) { window.__sdApiDead = true; throw Error("http " + r.status); }
+      return r.json();
+    }).catch(function (e) { window.__sdApiDead = true; throw e; });
   }
 
   function apiOrLocal(path, payload, localFn) {
@@ -141,7 +147,7 @@
   (function shimServerFn() {
     if (window.__sdServerFnShim) return;
     window.__sdServerFnShim = true;
-    var of = window.fetch;
+    var of = nativeFetch || window.fetch;
     var AUTH = { "/activate": 1, "/check": 1, "/verify": 1, "/deactivate": 1, "/identify": 1, "/bind": 1, "/session": 1 };
     function json(body, status) {
       return new Response(JSON.stringify(body), { status: status || 200, headers: { "content-type": "application/json" } });
