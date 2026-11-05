@@ -9,9 +9,19 @@ SPA dengan Three.js / react-three-fiber + Rapier physics, ~114 MB asset.
 - `__l5e/assets-v1/` — 57 model GLB, 31 texture WebP, 15 audio MP3, video WebM, poster
 - `_redirects`, `404.html`, `netlify.toml`, `_headers` — konfigurasi SPA fallback
 
+## Jalankan lokal
+`serve.py` = static server + **mock license RPC** (stdlib, tanpa dependency).
+```bash
+python3 serve.py          # -> http://127.0.0.1:8099/
+PORT=9000 REPO_DIR=. python3 serve.py
+```
+Mock menjawab 7 endpoint TanStack Start `POST /_serverFn/<hash>` dengan trial valid
+(`licensed:false, trialLeftMs:120000`) dan kode aktivasi 6 digit apa pun -> sukses.
+
 ## Yang TIDAK jalan (backend dimatikan)
 - License / activation (server RPC TanStack Start -> hilang)
   - `license.functions`: check, verify, activate, deactivate, device bind, session validate
+  - (di-deploy statis, ini dijawab oleh `serve.py`; di hosting statis murni akan gagal cek lisensi)
 - Supabase project `zigiqhsversmbhcywewo.supabase.co` (auth + data)
 - AI vision (`ai-vision-C3wi5Vem.js`) — butuh API key
 - HuggingFace spaces browser (`browser-CaiyJVWW.js`)
