@@ -53,6 +53,16 @@
     return left > 0 ? left : 0;
   }
 
+  function ensureTrialStart() {
+    var t = null;
+    try { t = localStorage.getItem(K_TRIAL); } catch (e) {}
+    if (!t || t === "") {
+      try { localStorage.setItem(K_TRIAL, String(Date.now())); } catch (e) {}
+      return true;
+    }
+    return false;
+  }
+
   function localState() {
     var d = deviceId();
     var rec = null;
@@ -62,7 +72,10 @@
     // Tanpa backend: gate tetap tampil; lisensi divalidasi offline (kode keygen terikat perangkat)
     if (rec && rec.deviceId === d && rec.code) return { licensed: true, trialUsed: true, trialLeftMs: 0, expiresAt: null, offline: true };
     // Kontrak klien: trialUsed=false -> masih boleh "Coba Trial"; trial aktif -> trialUsed=true + trialLeftMs>0
-    if (!started) return { licensed: false, trialUsed: false, trialLeftMs: TRIAL_MS, expiresAt: null, offline: true };
+    if (!started) {
+      ensureTrialStart();
+      return { licensed: false, trialUsed: true, trialLeftMs: TRIAL_MS, expiresAt: null, offline: true };
+    }
     var left = trialLeft();
     return left > 0 ? { licensed: false, trialUsed: true, trialLeftMs: left, expiresAt: null, offline: true }
                     : { licensed: false, trialUsed: true, trialLeftMs: 0, expiresAt: null, offline: true };
