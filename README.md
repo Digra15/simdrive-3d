@@ -1,6 +1,6 @@
-# BangPay Simulator (mirror / clone)
+# SimDrive 3D (mirror / clone)
 
-Static mirror of `bangpaysimulator.lovable.app` — Vite + React + TanStack Router
+Static mirror of `simdrive3d.local` — Vite + React + TanStack Router
 SPA dengan Three.js / react-three-fiber + Rapier physics, ~114 MB asset.
 
 ## Isi
