@@ -33,7 +33,7 @@ Semua fitur 3D/simulator berjalan offline karena model & texture sudah di-mirror
 ### Cloudflare Pages (rekomendasi)
 Gratis, bandwidth unlimited, file limit 25 MB (terbesar di sini 6.3 MB).
 ```
-npx wrangler pages deploy . --project-name bangpay-simulator
+npx wrangler pages deploy . --project-name simdrive-simulator
 ```
 
 ### Netlify

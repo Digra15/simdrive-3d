@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Static server + mock license server for BangPay Simulator clone."""
+"""Static server + mock license server for SimDrive 3D clone."""
 import json, os, re, sys, html
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 import traceback
+import licensing
 
-REPO = os.environ.get("REPO_DIR", "/root/bangpay-simulator")
+REPO = os.environ.get("REPO_DIR", "/root/simdrive-3d")
 PORT = int(os.environ.get("PORT", "8099"))
 
+# skema yang diminta klien: {licensed, trialUsed, trialLeftMs, expiresAt}
+# licensed:true + expiresAt:null -> status 'lifetime_active' -> simulator terbuka penuh
 TRIAL_LICENSE = json.dumps({
-    "t": {"i": 6, "s": "{}", "c": 2, "e": 1, "a": "", "f": 1, "b": 0, "o": 0},
-    "f": 127, "m": []
+    "licensed": True, "trialUsed": True, "trialLeftMs": 0, "expiresAt": None
 })
 ACTIVATE_OK = json.dumps({"ok": True, "message": "Lisensi berhasil diaktifkan"})
 ACTIVATE_BAD = json.dumps({"ok": False, "message": "Kode lisensi tidak valid"})
@@ -42,40 +44,117 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=REPO, **kwargs)
 
+    def _json(self, obj, code=200):
+        body = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_json(self):
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(n) if n else b""
+            obj = json.loads(raw.decode("utf-8", "ignore") or "{}")
+            return obj if isinstance(obj, dict) else {}
+        except Exception:
+            return {}
+
+    def _api(self, path, payload):
+        """Lisensi milik sendiri. Return dict | None kalau bukan route API."""
+        if path in ("/api/license/check", "/api/license/verify"):
+            print(f"[dev] {str(payload.get('deviceId'))[:16]}", file=sys.stderr, flush=True)
+            return licensing.check(payload.get("deviceId", ""), payload.get("hw", ""), payload.get("info"))
+        if path == "/api/license/activate":
+            return licensing.activate(str(payload.get("code", "")).strip(),
+                                      payload.get("deviceId", ""), payload.get("hw", ""))
+        if path == "/api/license/deactivate":
+            return licensing.deactivate(payload.get("deviceId", ""))
+        if path == "/api/license/identify":
+            return {"deviceId": payload.get("deviceId", "")}
+        if path == "/api/license/bind":
+            licensing.bind(payload.get("deviceId", ""), payload.get("hw", ""))
+            return {"ok": True}
+        if path == "/api/license/session":
+            return {"valid": True}
+        if path == "/api/license/stats":
+            return licensing.stats()
+        if path.startswith("/api/license/admin/"):
+            if not licensing.auth(self.headers.get("x-admin-token")):
+                return {"ok": False, "message": "Token admin salah."}
+            act = path.rsplit("/", 1)[1]
+            if act == "list":
+                return {"ok": True, "codes": licensing.list_codes(), "stats": licensing.stats()}
+            if act == "create":
+                return licensing.create_codes(payload.get("count", 1), payload.get("days", 0),
+                                              payload.get("note", ""), payload.get("customer", ""))
+            if act == "revoke":
+                return licensing.revoke(str(payload.get("code", "")).strip())
+            if act == "auto":
+                return {"ok": True, "auto": licensing.set_auto(bool(payload.get("on")))}
+            if act == "token":
+                return {"ok": True, "token": licensing.token()}
+        return None
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        fs = os.path.join(REPO, path.lstrip("/"))
+        # SPA fallback: route tanpa ekstensi (mis. /play, /admin) -> index.html
+        if not os.path.splitext(path)[1] and not os.path.isdir(fs):
+            if not os.path.isfile(fs):
+                self.path = "/index.html"
+        return super().do_GET()
+
     def do_POST(self):
         parsed = urlparse(self.path)
+        payload = self._read_json()
+        print(f"[POST] {parsed.path}", file=sys.stderr, flush=True)
+        if parsed.path.startswith("/api/license/"):
+            try:
+                out = self._api(parsed.path, payload)
+            except Exception as e:
+                traceback.print_exc()
+                out = {"ok": False, "message": f"server error: {e}"}
+            if out is not None:
+                print(f"[license] {parsed.path} -> {json.dumps(out)[:200]}", file=sys.stderr, flush=True)
+                self._json(out)
+                return
         if parsed.path.startswith("/_serverFn/"):
-            fn_id = parsed.path[12:]
+            fn_id = parsed.path.split("/_serverFn/", 1)[1].strip("/")
             resp = SERVER_FNS.get(fn_id)
+            if resp is None:
+                # serverFn lain (simpan peta, checkout/premium): balas sukses generik
+                out = {"ok": True, "success": True, "status": "ok", "data": {}, "products": [],
+                       "paid": True, "orderId": "local", "url": None}
+                print(f"[serverFn] {fn_id[:12]} -> generic ok", file=sys.stderr, flush=True)
+                self._json(out)
+                return
             if resp:
                 name, body = resp
                 # activation: check code from body
                 if name == "activate":
                     try:
-                        length = int(self.headers.get("Content-Length", 0))
-                        body_raw = self.rfile.read(length).decode("utf-8", "ignore")
-                        # try parse as JSON / seroval
-                        obj = json.loads(body_raw) if body_raw.strip().startswith("{") else {}
-                        data = obj.get("data", {})
+                        data = payload.get("data", payload)
                         if isinstance(data, str):
                             data = {}
                         code = str(data.get("code", "")).strip()
-                        if code and len(code) == 6 and code.isdigit():
-                            print(f"[+] Activate: {code}", file=sys.stderr)
-                            body = ACTIVATE_OK
+                        dev = data.get("deviceId", "")
+                        hw = data.get("hw", "")
+                        if code:
+                            res = licensing.activate(code, dev, hw)
+                            print(f"[+] Activate: {code} -> {res}", file=sys.stderr)
+                            body = json.dumps(res, ensure_ascii=False)
                         else:
                             body = ACTIVATE_BAD
                     except Exception as e:
                         print(f"[!] activate parse err: {e}", file=sys.stderr)
                         body = ACTIVATE_BAD
                 elif name == "device_identify":
-                    try:
-                        length = int(self.headers.get("Content-Length", 0))
-                        body_raw = self.rfile.read(length).decode("utf-8", "ignore")
-                        obj = json.loads(body_raw) if body_raw.strip().startswith("{") else {}
-                        dev = obj.get("data", {}).get("deviceId", "unknown") if isinstance(obj.get("data"), dict) else "unknown"
-                        print(f"[*] Device: {dev[:20]}", file=sys.stderr)
-                    except: pass
+                    dev = payload.get("data", {}).get("deviceId", "unknown") if isinstance(payload.get("data"), dict) else "unknown"
+                    print(f"[*] Device: {str(dev)[:20]}", file=sys.stderr)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", len(body))
@@ -84,13 +163,6 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             # unknown server fn
             self.send_response(404)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(b"{}")
-            return
-
-        if parsed.path == "/__l5e/trackevents":
-            self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(b"{}")
@@ -116,7 +188,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def run():
     srv = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"BangPay Simulator mock server → http://0.0.0.0:{PORT}/", flush=True)
+    print(f"SimDrive 3D mock server → http://0.0.0.0:{PORT}/", flush=True)
     print(f"Serving: {REPO}", flush=True)
     print(f"License mock: {len(SERVER_FNS)} serverFns active", flush=True)
     try:
