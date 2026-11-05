@@ -1,0 +1,1 @@
+import{i as e}from"./rolldown-runtime-Dd_uD5pT.js";import{t}from"./jszip.min-gbIpdR0s.js";var n=e(t(),1);async function r(e){let t=await n.default.loadAsync(e),r={};for(let[e,n]of Object.entries(t.files))n.dir||(r[e]=await n.async(`uint8array`));return r}export{r as unzipStore};
